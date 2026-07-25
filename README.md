@@ -26,6 +26,12 @@ npx vercel --prod # deploy
 
 Runtime dep: `@definisi/vidsrc-scraper` (small, ~8kB unpacked, uses axios).
 
+### Environment
+
+- `TMDB_API_KEY` *(recommended)* — a free key from [TMDB](https://www.themoviedb.org/settings/api). Used to resolve IMDb ids to TMDB ids (the scraper's embed source only accepts TMDB). Without it, the addon still works but returns only the browser mirrors; the native HLS stream will be omitted.
+
+Add it to Vercel: `vercel env add TMDB_API_KEY production`, paste the key, then redeploy.
+
 ## Endpoints
 
 - `/` — install landing page
@@ -39,6 +45,7 @@ Runtime dep: `@definisi/vidsrc-scraper` (small, ~8kB unpacked, uses axios).
 - `api/configure.js` — landing page with install deep link
 - `lib/manifest.js` — addon metadata
 - `lib/sources.js` — mirror list and id parser
+- `lib/tmdb.js` — IMDb→TMDB id resolver (uses `TMDB_API_KEY`)
 
 ## Known limitations
 

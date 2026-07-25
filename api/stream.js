@@ -1,5 +1,6 @@
 import { scrapeVidsrc } from "@definisi/vidsrc-scraper";
 import { buildEmbedUrls, parseStreamId } from "../lib/sources.js";
+import { imdbToTmdb } from "../lib/tmdb.js";
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -18,11 +19,17 @@ export default async function handler(req, res) {
   const streams = [];
 
   try {
+    const tmdbId = await imdbToTmdb({
+      imdbId: parsed.imdbId,
+      type: parsed.type,
+    });
+    if (!tmdbId) throw new Error("no tmdb id");
+
     const libType = parsed.type === "series" ? "tv" : "movie";
     const season = parsed.season != null ? String(parsed.season) : null;
     const episode = parsed.episode != null ? String(parsed.episode) : null;
 
-    const result = await scrapeVidsrc(parsed.imdbId, libType, season, episode, {
+    const result = await scrapeVidsrc(tmdbId, libType, season, episode, {
       timeout: 6000,
       cacheTtl: 1800,
     });
