@@ -1,0 +1,9 @@
+{
+  "version": 2,
+  "rewrites": [
+    { "source": "/", "destination": "/api/configure" },
+    { "source": "/manifest.json", "destination": "/api/manifest" },
+    { "source": "/configure", "destination": "/api/configure" },
+    { "source": "/stream/:type/:id", "destination": "/api/stream?type=:type&id=:id" }
+  ]
+}

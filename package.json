@@ -1,0 +1,13 @@
+{
+  "name": "vidsrc-addon",
+  "version": "1.0.0",
+  "description": "Stremio addon that serves vidsrc streams for movies and TV shows",
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "dev": "vercel dev",
+    "deploy": "vercel --prod"
+  }
+}
