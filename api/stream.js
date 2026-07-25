@@ -1,5 +1,5 @@
+import { scrapeVidsrc } from "@definisi/vidsrc-scraper";
 import { buildEmbedUrls, parseStreamId } from "../lib/sources.js";
-import { scrapeVidsrcM3u8 } from "../lib/scrape-vidsrc.js";
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -18,19 +18,27 @@ export default async function handler(req, res) {
   const streams = [];
 
   try {
-    const scraped = await scrapeVidsrcM3u8(parsed);
-    if (scraped?.m3u8) {
+    const libType = parsed.type === "series" ? "tv" : "movie";
+    const season = parsed.season != null ? String(parsed.season) : null;
+    const episode = parsed.episode != null ? String(parsed.episode) : null;
+
+    const result = await scrapeVidsrc(parsed.imdbId, libType, season, episode, {
+      timeout: 6000,
+      cacheTtl: 1800,
+    });
+
+    if (result?.success && result.hlsUrl) {
       streams.push({
         name: "VidSrc",
-        title: "vidsrc.xyz\nNative HLS · in-app playback",
-        url: scraped.m3u8,
+        title: "Native HLS · in-app playback",
+        url: result.hlsUrl,
         behaviorHints: {
           notWebReady: false,
           proxyHeaders: {
             request: {
-              Referer: scraped.referer,
+              Referer: "https://cloudnestra.com/",
               "User-Agent":
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
             },
           },
         },

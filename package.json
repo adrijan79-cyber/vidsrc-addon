@@ -9,5 +9,8 @@
   "scripts": {
     "dev": "vercel dev",
     "deploy": "vercel --prod"
+  },
+  "dependencies": {
+    "@definisi/vidsrc-scraper": "^2.0.2"
   }
 }

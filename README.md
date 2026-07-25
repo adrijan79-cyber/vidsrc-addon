@@ -4,10 +4,10 @@ Stremio addon that serves streams for movies and TV shows from vidsrc mirrors.
 
 For each title it returns:
 
-- **Native HLS** — an `m3u8` scraped from `vidsrc.xyz` for in-app playback (best effort — may not always resolve).
+- **Native HLS** — an `m3u8` extracted via [`@definisi/vidsrc-scraper`](https://www.npmjs.com/package/@definisi/vidsrc-scraper) for in-app playback (best effort — may not always resolve).
 - **Browser mirrors** — 6 vidsrc mirror embeds (`.xyz` / `.to` / `.me` / `.pm` / `.in` / `.net`) as `externalUrl` streams that open in your browser.
 
-The HLS stream is listed first so Stremio will pick it by default when it resolves; the browser mirrors are always included as fallbacks.
+The HLS stream is listed first so Stremio-compatible clients pick it by default when it resolves; the browser mirrors are always included as fallbacks.
 
 ## Install
 
@@ -24,7 +24,7 @@ npx vercel        # link the project
 npx vercel --prod # deploy
 ```
 
-Zero runtime dependencies. Uses native `fetch` (Node 18+).
+Runtime dep: `@definisi/vidsrc-scraper` (small, ~8kB unpacked, uses axios).
 
 ## Endpoints
 
@@ -39,7 +39,6 @@ Zero runtime dependencies. Uses native `fetch` (Node 18+).
 - `api/configure.js` — landing page with install deep link
 - `lib/manifest.js` — addon metadata
 - `lib/sources.js` — mirror list and id parser
-- `lib/scrape-vidsrc.js` — extracts the `m3u8` from a vidsrc.xyz embed
 
 ## Known limitations
 
