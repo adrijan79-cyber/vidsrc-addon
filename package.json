@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Stremio addon that serves vidsrc streams for movies and TV shows",
   "private": true,
+  "type": "module",
   "engines": {
     "node": ">=18"
   },
