@@ -149,7 +149,9 @@ function proxyUrlFor(target, req) {
   const host = req.headers["x-forwarded-host"] || req.headers.host;
   const proto = (req.headers["x-forwarded-proto"] || "https").split(",")[0];
   const sig = signTarget(cleanTarget);
-  return `${proto}://${host}/proxy?url=${encodeURIComponent(cleanTarget)}&sig=${sig}`;
+  const targetPath = new URL(cleanTarget).pathname.toLowerCase();
+  const proxyPath = targetPath.includes(".m3u8") ? "/proxy.m3u8" : "/proxy";
+  return `${proto}://${host}${proxyPath}?url=${encodeURIComponent(cleanTarget)}&sig=${sig}`;
 }
 function rewritePlaylist(text, playlistUrl, req) {
   const rewriteOne = raw => {
@@ -181,7 +183,7 @@ export function createHandler({ sessionFactory = acquireUpstreamSession, log = c
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Headers", "*");
     res.setHeader("Cache-Control", "no-store");
-    res.setHeader("X-VidSrc-Proxy-Version", "1.1.8");
+    res.setHeader("X-VidSrc-Proxy-Version", "1.1.9");
     if (req.method === "OPTIONS") return res.status(204).end();
     const target = String(req.query.url || "");
     const sig = String(req.query.sig || "");
