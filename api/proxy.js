@@ -181,7 +181,7 @@ export function createHandler({ sessionFactory = acquireUpstreamSession, log = c
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Headers", "*");
     res.setHeader("Cache-Control", "no-store");
-    res.setHeader("X-VidSrc-Proxy-Version", "1.1.6");
+    res.setHeader("X-VidSrc-Proxy-Version", "1.1.7");
     if (req.method === "OPTIONS") return res.status(204).end();
     const target = String(req.query.url || "");
     const sig = String(req.query.sig || "");
@@ -224,8 +224,8 @@ export function createHandler({ sessionFactory = acquireUpstreamSession, log = c
       let detectedType = null;
 
       // Some VidSrc segment hosts incorrectly label real TS/MP4 bytes as text/html.
-      // Do not rebuild the stream after peeking (that caused a Stremio crash).
-      // tee() gives us a disposable probe branch while playback keeps the full body.
+      // Keep the playback branch intact. Cancelling the probe resolves only when
+      // playback consumes or cancels its branch, so do not await it before piping.
       if (mediaBody && contentType.includes("text/html")) {
         const [probeBody, playbackBody] = mediaBody.tee();
         const reader = probeBody.getReader();
@@ -239,7 +239,7 @@ export function createHandler({ sessionFactory = acquireUpstreamSession, log = c
             size += part.value.length;
           }
         } finally {
-          await reader.cancel().catch(() => {});
+          void reader.cancel().catch(() => {});
           reader.releaseLock();
         }
 
@@ -263,6 +263,7 @@ export function createHandler({ sessionFactory = acquireUpstreamSession, log = c
       res.once("finish", () => session.close());
       res.once("close", () => session.close());
       const source = Readable.fromWeb(mediaBody);
+      res.once("close", () => source.destroy());
       source.on("error", () => { session.close(); res.destroy(); });
       return source.pipe(res);
     } catch (error) {
