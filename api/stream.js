@@ -1,5 +1,5 @@
 import { buildEmbedUrls, parseStreamId } from "../lib/sources.js";
-import { resolveVidSrc, REFERER, UA } from "../lib/vidsrc-direct.js";
+import { resolveVidSrc } from "../lib/vidsrc-direct.js";
 import { signTarget } from "../lib/proxy-sign.js";
 
 function addonBase(req) {
@@ -8,46 +8,21 @@ function addonBase(req) {
   return `${proto}://${host}`;
 }
 
-async function fetchPlaybackToken(streamUrl) {
-  const origin = new URL(streamUrl).origin;
-  const tokenUrl = `${origin}/generate.php`;
-
-  const response = await fetch(tokenUrl, {
-    headers: {
-      Accept: "*/*",
-      "User-Agent": UA,
-      Referer: REFERER,
-    },
-    redirect: "follow",
-  });
-
-  if (!response.ok) return null;
-  const body = (await response.text()).trim();
-  if (!body || body.startsWith("<")) return null;
-
-  try {
-    const parsed = JSON.parse(body);
-    return parsed?.token || parsed?.jwt || parsed?.data?.token || body;
-  } catch {
-    return body;
-  }
-}
-
-function withToken(streamUrl, token) {
-  const url = new URL(streamUrl);
-  if (token) url.searchParams.set("token", token);
+function stripToken(rawUrl) {
+  const url = new URL(rawUrl);
+  url.searchParams.delete("token");
   return url.href;
 }
 
 function proxiedUrl(target, req) {
-  const sig = signTarget(target);
-  return `${addonBase(req)}/proxy?url=${encodeURIComponent(target)}&sig=${sig}`;
+  const cleanTarget = stripToken(target);
+  const sig = signTarget(cleanTarget);
+  return `${addonBase(req)}/proxy?url=${encodeURIComponent(cleanTarget)}&sig=${sig}`;
 }
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "*");
-  // VidSrc playback tokens are short-lived. Do not cache stream responses.
   res.setHeader("Cache-Control", "no-store");
 
   const { type, id } = req.query;
@@ -66,24 +41,23 @@ export default async function handler(req, res) {
 
     for (const rawUrl of result.urls) {
       try {
-        const token = await fetchPlaybackToken(rawUrl);
-        const playable = withToken(rawUrl, token);
         streams.push({
           name: "VidSrc Direct",
           title: `${result.title || "VidSrc"} · Native HLS`,
-          // Keep playlist + segments on the same Vercel egress IP that minted
-          // the upstream token, and rewrite the HLS tree through /proxy.
-          url: proxiedUrl(playable, req),
+          // The proxy mints a fresh playback token for EVERY request
+          // (master, variants and segments) so Vercel egress-IP changes do not
+          // invalidate VidSrc's IP-bound tokens.
+          url: proxiedUrl(rawUrl, req),
           behaviorHints: {
             notWebReady: true,
           },
         });
       } catch {
-        // One CDN failed; keep trying any other resolved URLs.
+        // One malformed CDN URL should not hide the others.
       }
     }
   } catch {
-    // Direct resolver failed — browser mirrors remain as a last-resort fallback.
+    // Direct resolver failed — keep browser mirrors as last-resort fallback.
   }
 
   for (const { name, url } of buildEmbedUrls(parsed)) {
