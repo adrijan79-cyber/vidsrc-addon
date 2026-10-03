@@ -5,6 +5,8 @@
     { "source": "/manifest.json", "destination": "/api/manifest" },
     { "source": "/configure", "destination": "/api/configure" },
     { "source": "/stream/:type/:id", "destination": "/api/stream?type=:type&id=:id" },
-    { "source": "/proxy", "destination": "/api/proxy" }
+    { "source": "/proxy", "destination": "/api/proxy" },
+    { "source": "/subtitles/:type/:id", "destination": "/api/subtitles?type=:type&id=:id" },
+    { "source": "/subtitle/:filename", "destination": "/api/subtitle" }
   ]
 }

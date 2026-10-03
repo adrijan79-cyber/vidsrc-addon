@@ -1,6 +1,7 @@
 import { buildEmbedUrls, parseStreamId } from "../lib/sources.js";
 import { resolveVidSrc } from "../lib/vidsrc-direct.js";
 import { signTarget } from "../lib/proxy-sign.js";
+import { buildSubtitleList } from "../lib/subtitles.js";
 
 function addonBase(req) {
   const host = req.headers["x-forwarded-host"] || req.headers.host;
@@ -38,18 +39,19 @@ export default async function handler(req, res) {
 
   try {
     const result = await resolveVidSrc(parsed);
+    const subtitles = buildSubtitleList(result.subtitles, req);
 
     for (const [index, rawUrl] of result.urls.entries()) {
       try {
         streams.push({
           name: `VidSrc Direct ${index + 1}`,
           title: `${result.title || "VidSrc"} · Native HLS · Server ${index + 1}`,
-          // The proxy mints a fresh playback token for EVERY request
-          // (master, variants and segments) so Vercel egress-IP changes do not
-          // invalidate VidSrc's IP-bound tokens.
+          // The proxy shares a short-lived token on its upstream session.
           url: proxiedUrl(rawUrl, req),
+          subtitles,
           behaviorHints: {
             notWebReady: true,
+            ...(result.filename ? { filename: result.filename } : {}),
           },
         });
       } catch {

@@ -181,7 +181,7 @@ export function createHandler({ sessionFactory = acquireUpstreamSession, log = c
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Headers", "*");
     res.setHeader("Cache-Control", "no-store");
-    res.setHeader("X-VidSrc-Proxy-Version", "1.1.7");
+    res.setHeader("X-VidSrc-Proxy-Version", "1.1.8");
     if (req.method === "OPTIONS") return res.status(204).end();
     const target = String(req.query.url || "");
     const sig = String(req.query.sig || "");
