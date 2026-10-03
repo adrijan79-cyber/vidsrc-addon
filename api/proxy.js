@@ -163,12 +163,25 @@ function rewritePlaylist(text, playlistUrl, req) {
   }).join("\n");
 }
 
+export function detectMediaType(bytes) {
+  if (bytes.length >= 377 && bytes[0] === 0x47 && bytes[188] === 0x47 && bytes[376] === 0x47) {
+    return "video/mp2t";
+  }
+  if (
+    bytes.length >= 8 &&
+    ["ftyp", "styp", "moof"].includes(Buffer.from(bytes.subarray(4, 8)).toString("ascii"))
+  ) {
+    return "video/mp4";
+  }
+  return null;
+}
+
 export function createHandler({ sessionFactory = acquireUpstreamSession, log = console.info } = {}) {
   return async function handler(req, res) {
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Headers", "*");
     res.setHeader("Cache-Control", "no-store");
-    res.setHeader("X-VidSrc-Proxy-Version", "1.1.3");
+    res.setHeader("X-VidSrc-Proxy-Version", "1.1.6");
     if (req.method === "OPTIONS") return res.status(204).end();
     const target = String(req.query.url || "");
     const sig = String(req.query.sig || "");
@@ -207,16 +220,49 @@ export function createHandler({ sessionFactory = acquireUpstreamSession, log = c
         res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
         return res.send(rewritePlaylist(text, finalUrl, req));
       }
+      let mediaBody = upstream.body;
+      let detectedType = null;
+
+      // Some VidSrc segment hosts incorrectly label real TS/MP4 bytes as text/html.
+      // Do not rebuild the stream after peeking (that caused a Stremio crash).
+      // tee() gives us a disposable probe branch while playback keeps the full body.
+      if (mediaBody && contentType.includes("text/html")) {
+        const [probeBody, playbackBody] = mediaBody.tee();
+        const reader = probeBody.getReader();
+        const chunks = [];
+        let size = 0;
+        try {
+          while (size < 377) {
+            const part = await reader.read();
+            if (part.done) break;
+            chunks.push(part.value);
+            size += part.value.length;
+          }
+        } finally {
+          await reader.cancel().catch(() => {});
+          reader.releaseLock();
+        }
+
+        detectedType = detectMediaType(Buffer.concat(chunks));
+        if (!detectedType) {
+          await playbackBody.cancel().catch(() => {});
+          return res.status(502).send("Invalid upstream video content");
+        }
+        mediaBody = playbackBody;
+      }
+
       for (const key of ["content-type", "content-length", "content-range", "accept-ranges", "etag", "last-modified"]) {
         const value = upstream.headers.get(key);
         if (value) res.setHeader(key, value);
       }
+      if (detectedType) res.setHeader("Content-Type", detectedType);
+
       res.status(upstream.status);
-      if (!upstream.body) return res.end();
+      if (!mediaBody) return res.end();
       streaming = true;
       res.once("finish", () => session.close());
       res.once("close", () => session.close());
-      const source = Readable.fromWeb(upstream.body);
+      const source = Readable.fromWeb(mediaBody);
       source.on("error", () => { session.close(); res.destroy(); });
       return source.pipe(res);
     } catch (error) {
