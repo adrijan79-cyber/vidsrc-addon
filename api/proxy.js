@@ -163,18 +163,12 @@ function rewritePlaylist(text, playlistUrl, req) {
   }).join("\n");
 }
 
-export function detectMediaType(bytes) {
-  if (bytes.length >= 377 && bytes[0] === 0x47 && bytes[188] === 0x47 && bytes[376] === 0x47) return "video/mp2t";
-  if (bytes.length >= 8 && ["ftyp", "styp", "moof"].includes(Buffer.from(bytes.subarray(4, 8)).toString("ascii"))) return "video/mp4";
-  return null;
-}
-
 export function createHandler({ sessionFactory = acquireUpstreamSession, log = console.info } = {}) {
   return async function handler(req, res) {
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Headers", "*");
     res.setHeader("Cache-Control", "no-store");
-    res.setHeader("X-VidSrc-Proxy-Version", "1.1.4");
+    res.setHeader("X-VidSrc-Proxy-Version", "1.1.3");
     if (req.method === "OPTIONS") return res.status(204).end();
     const target = String(req.query.url || "");
     const sig = String(req.query.sig || "");
@@ -213,50 +207,16 @@ export function createHandler({ sessionFactory = acquireUpstreamSession, log = c
         res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
         return res.send(rewritePlaylist(text, finalUrl, req));
       }
-      let mediaBody = upstream.body;
-      let detectedType = null;
-      if (mediaBody && contentType.includes("text/html")) {
-        const reader = mediaBody.getReader();
-        const prefix = [];
-        let size = 0;
-        while (size < 377) {
-          const chunk = await reader.read();
-          if (chunk.done) break;
-          prefix.push(chunk.value);
-          size += chunk.value.length;
-        }
-        detectedType = detectMediaType(Buffer.concat(prefix));
-        if (!detectedType) {
-          await reader.cancel();
-          reader.releaseLock();
-          return res.status(502).send("Invalid upstream video content");
-        }
-        mediaBody = Readable.toWeb(Readable.from((async function* () {
-          try {
-            for (const chunk of prefix) yield chunk;
-            while (true) {
-              const chunk = await reader.read();
-              if (chunk.done) break;
-              yield chunk.value;
-            }
-          } finally {
-            await reader.cancel().catch(() => {});
-            reader.releaseLock();
-          }
-        })()));
-      }
       for (const key of ["content-type", "content-length", "content-range", "accept-ranges", "etag", "last-modified"]) {
         const value = upstream.headers.get(key);
         if (value) res.setHeader(key, value);
       }
-      if (detectedType) res.setHeader("Content-Type", detectedType);
       res.status(upstream.status);
-      if (!mediaBody) return res.end();
+      if (!upstream.body) return res.end();
       streaming = true;
       res.once("finish", () => session.close());
       res.once("close", () => session.close());
-      const source = Readable.fromWeb(mediaBody);
-      res.once("close", () => source.destroy());
+      const source = Readable.fromWeb(upstream.body);
       source.on("error", () => { session.close(); res.destroy(); });
       return source.pipe(res);
     } catch (error) {
