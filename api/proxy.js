@@ -46,6 +46,35 @@ export function createUpstreamSession() {
   return { fetch: fetchSession, close() { Object.values(agents).forEach(agent => agent.destroy()); } };
 }
 
+const sessions = new Map();
+const tokenStates = new WeakMap();
+export function acquireUpstreamSession(targetUrl) {
+  const origin = new URL(targetUrl).origin;
+  let entry = sessions.get(origin);
+  if (!entry) {
+    if (sessions.size >= 16) throw new Error("session_capacity");
+    entry = { session: createUpstreamSession(), users: 0, timer: null };
+    sessions.set(origin, entry);
+  }
+  clearTimeout(entry.timer);
+  entry.users++;
+  let released = false;
+  return {
+    fetch: entry.session.fetch,
+    close() {
+      if (released) return;
+      released = true;
+      if (--entry.users === 0) {
+        entry.timer = setTimeout(() => {
+          entry.session.close();
+          sessions.delete(origin);
+        }, 60000);
+        entry.timer.unref();
+      }
+    },
+  };
+}
+
 function absoluteUrl(value, base) {
   try { return new URL(value, base).href; } catch { return null; }
 }
@@ -64,6 +93,24 @@ function extractToken(body) {
   } catch { return text; }
 }
 async function mintToken(targetUrl, sessionFetch, log) {
+  let state = tokenStates.get(sessionFetch);
+  if (!state) {
+    state = { token: null, expiresAt: 0, pending: null, blockedUntil: 0 };
+    tokenStates.set(sessionFetch, state);
+  }
+  if (state.token && Date.now() < state.expiresAt) return state.token;
+  if (Date.now() < state.blockedUntil) {
+    const error = new Error("token_rate_limited");
+    error.code = "TOKEN_RATE_LIMITED";
+    error.retryAfter = Math.ceil((state.blockedUntil - Date.now()) / 1000);
+    throw error;
+  }
+  if (state.pending) return state.pending;
+  state.pending = issueToken(targetUrl, sessionFetch, log, state);
+  try { return await state.pending; }
+  finally { state.pending = null; }
+}
+async function issueToken(targetUrl, sessionFetch, log, state) {
   const origin = new URL(targetUrl).origin;
   const tokenRes = await sessionFetch(`${origin}/generate.php`, {
     headers: { Accept: "*/*", "User-Agent": UA, Referer: REFERER, "Cache-Control": "no-cache, no-store" },
@@ -72,7 +119,24 @@ async function mintToken(targetUrl, sessionFetch, log) {
   const tokenBody = await tokenRes.text();
   const token = tokenRes.ok ? extractToken(tokenBody) : null;
   log(`[proxy] token status=${tokenRes.status} present=${typeof token === "string" && !!token} cacheAge=${Number(tokenRes.headers.get("age") || 0)}`);
-  return typeof token === "string" ? token : null;
+  if (tokenRes.status === 429) {
+    const retry = tokenRes.headers.get("retry-after");
+    const seconds = /^\d+$/.test(retry || "") ? Number(retry) : Math.ceil((Date.parse(retry) - Date.now()) / 1000);
+    const wait = Number.isFinite(seconds) && seconds > 0 ? seconds : 60;
+    state.blockedUntil = Date.now() + wait * 1000;
+    const error = new Error("token_rate_limited");
+    error.code = "TOKEN_RATE_LIMITED";
+    error.retryAfter = wait;
+    throw error;
+  }
+  if (typeof token !== "string" || !token) throw new Error("token_unavailable");
+  state.token = token;
+  state.expiresAt = Date.now() + 60000;
+  try {
+    const payload = JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString("utf8"));
+    if (Number.isFinite(payload.exp)) state.expiresAt = Math.min(state.expiresAt, payload.exp * 1000 - 10000);
+  } catch { /* Providers may return opaque tokens. */ }
+  return token;
 }
 async function tokenizedTarget(rawTarget, sessionFetch, log) {
   const clean = new URL(stripToken(rawTarget));
@@ -99,12 +163,12 @@ function rewritePlaylist(text, playlistUrl, req) {
   }).join("\n");
 }
 
-export function createHandler({ sessionFactory = createUpstreamSession, log = console.info } = {}) {
+export function createHandler({ sessionFactory = acquireUpstreamSession, log = console.info } = {}) {
   return async function handler(req, res) {
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Headers", "*");
     res.setHeader("Cache-Control", "no-store");
-    res.setHeader("X-VidSrc-Proxy-Version", "1.1.2");
+    res.setHeader("X-VidSrc-Proxy-Version", "1.1.3");
     if (req.method === "OPTIONS") return res.status(204).end();
     const target = String(req.query.url || "");
     const sig = String(req.query.sig || "");
@@ -114,14 +178,15 @@ export function createHandler({ sessionFactory = createUpstreamSession, log = co
       parsed = new URL(target);
       if (!["http:", "https:"].includes(parsed.protocol)) throw new Error("bad protocol");
     } catch { return res.status(400).send("Invalid target"); }
-    const session = sessionFactory();
+    const session = sessionFactory(target);
     let streaming = false;
     try {
       let upstreamUrl;
       try { upstreamUrl = await tokenizedTarget(target, session.fetch, log); }
       catch (error) {
         log(`[proxy] token_request_failed code=${error.code || "request_failed"}`);
-        upstreamUrl = stripToken(target);
+        res.setHeader("Retry-After", String(error.retryAfter || 60));
+        return res.status(503).send("Video token temporarily unavailable; retry later");
       }
       const headers = { Accept: "*/*", "User-Agent": UA, Referer: REFERER };
       if (req.headers.range) headers.Range = req.headers.range;
