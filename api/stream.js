@@ -39,11 +39,11 @@ export default async function handler(req, res) {
   try {
     const result = await resolveVidSrc(parsed);
 
-    for (const rawUrl of result.urls) {
+    for (const [index, rawUrl] of result.urls.entries()) {
       try {
         streams.push({
-          name: "VidSrc Direct",
-          title: `${result.title || "VidSrc"} · Native HLS`,
+          name: `VidSrc Direct ${index + 1}`,
+          title: `${result.title || "VidSrc"} · Native HLS · Server ${index + 1}`,
           // The proxy mints a fresh playback token for EVERY request
           // (master, variants and segments) so Vercel egress-IP changes do not
           // invalidate VidSrc's IP-bound tokens.
