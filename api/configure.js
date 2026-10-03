@@ -24,8 +24,8 @@ export default function handler(req, res) {
 </head>
 <body>
   <div class="card">
-    <h1>VidSrc</h1>
-    <p>Stremio addon serving vidsrc mirrors for movies and TV shows. Faster than torrents — streams open in your browser.</p>
+    <h1>VidSrc Direct</h1>
+    <p>Stremio native-HLS test build. Direct streams play inside Stremio when resolution succeeds; browser mirrors are fallback only.</p>
     <a class="button primary" href="${stremioDeepLink}">Install in Stremio</a>
     <a class="button secondary" href="${manifestUrl}">Copy manifest URL</a>
     <p style="margin-top:1.25rem;font-size:.85rem;">Manifest: <code>${manifestUrl}</code></p>
